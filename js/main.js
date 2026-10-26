@@ -5,6 +5,7 @@ import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { GroundedSkybox } from 'three/addons/objects/GroundedSkybox.js';
 import { Quadrotor, PARAMS, minJerk } from './physics.js';
 import { loadDrone } from './drone-model.js';
+import { createGround, createGrass, createPad } from './environment.js';
 
 const PHYSICS_DT = 1 / 500;
 const HOVER = [0, 1.35, 0];
@@ -55,12 +56,11 @@ sun.shadow.bias = -0.0003;
 sun.shadow.normalBias = 0.01;
 scene.add(sun, sun.target);
 
-// Shadows land on the projected ground of the HDRI.
-const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.55 }));
-shadowCatcher.rotation.x = -Math.PI / 2;
-shadowCatcher.position.y = 0.001;
-shadowCatcher.receiveShadow = true;
-scene.add(shadowCatcher);
+// Fewer grass clumps on phones and small screens.
+const lowPower = matchMedia('(pointer: coarse)').matches || Math.min(innerWidth, innerHeight) < 700;
+const grass = createGrass({ count: lowPower ? 50000 : 200000 });
+scene.add(grass.mesh, createPad());
+const wind = new THREE.Vector2();
 
 // Soft contact shadow and flattened grass under the drone (downwash).
 function radialTexture(stops) {
@@ -77,7 +77,7 @@ const contact = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ map: radialTexture([[0, 'rgba(0,0,0,0.7)'], [0.5, 'rgba(0,0,0,0.25)'], [1, 'rgba(0,0,0,0)']]), transparent: true, depthWrite: false }),
 );
 contact.rotation.x = -Math.PI / 2;
-contact.position.y = 0.002;
+contact.position.y = 0.007;
 scene.add(contact);
 
 // Dust and grass bits lifted by the downwash near the ground.
@@ -125,22 +125,26 @@ const manager = new THREE.LoadingManager();
 manager.onProgress = (_url, loaded, total) => { ui.progress.style.transform = `scaleX(${loaded / total})`; };
 
 async function init() {
-  const [hdr, backplate, droneModel] = await Promise.all([
+  const [hdr, backplate, droneModel, ground] = await Promise.all([
     new RGBELoader(manager).loadAsync('assets/env/alps_field_1k.hdr'),
     new THREE.TextureLoader(manager).loadAsync('assets/env/alps-field-8k.jpg'),
     loadDrone(manager),
+    createGround(manager, renderer),
   ]);
   hdr.mapping = THREE.EquirectangularReflectionMapping;
   scene.environment = hdr;
   scene.environmentIntensity = 1.15;
 
+  // The photo is only the distant backdrop: sky, mountains and the far meadow.
+  // Near the camera, where a projected photo would look stretched, the ground
+  // is real geometry with grass, fading into the photo further out.
   backplate.mapping = THREE.EquirectangularReflectionMapping;
   backplate.colorSpace = THREE.SRGBColorSpace;
   backplate.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  const skybox = new GroundedSkybox(backplate, 1.7, 90, 160);
+  const skybox = new GroundedSkybox(backplate, 1.6, 250, 128);
   skybox.material.toneMapped = false;
-  skybox.position.y = 1.7 - 0.01;
-  scene.add(skybox);
+  skybox.position.y = 1.6 - 0.04;
+  scene.add(skybox, ground);
 
   model = droneModel;
   scene.add(model.root);
@@ -227,17 +231,17 @@ function cameraGoal(out, look) {
   const d = new THREE.Vector3(...drone.pos);
   const intro = THREE.MathUtils.smoothstep(clock, T_LIFTOFF - 0.6, T_READY + 0.6);
   // Ground-level close-up before takeoff, wide shot once hovering.
-  const close = new THREE.Vector3(0.62, 0.11, 0.78).applyAxisAngle(new THREE.Vector3(0, 1, 0), clock * 0.05);
-  const wide = new THREE.Vector3(0.82, 0.42, 1.18).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.sin(clock * 0.07) * 0.18);
+  const close = new THREE.Vector3(0.66, 0.26, 0.86).applyAxisAngle(new THREE.Vector3(0, 1, 0), clock * 0.05);
+  const wide = new THREE.Vector3(0.84, 0.3, 1.22).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.sin(clock * 0.07) * 0.18);
   const offset = close.lerp(wide, intro);
   // The camera climbs with the drone, so it stays in frame during takeoff.
-  const anchor = new THREE.Vector3(d.x * 0.6, Math.min(d.y, HOVER[1] + 0.6) * 0.92 + 0.04, d.z * 0.6);
+  const anchor = new THREE.Vector3(d.x * 0.85, Math.min(d.y, HOVER[1] + 0.6) * 0.92 + 0.04, d.z * 0.85);
   out.copy(anchor).add(offset);
   // Once hovering, frame the drone right of centre, clear of the headline.
   const settle = THREE.MathUtils.smoothstep(clock, T_READY - 1.2, T_READY + 1);
   const side = new THREE.Vector3(offset.z, 0, -offset.x).normalize().multiplyScalar(-0.3 * settle * frameShift());
   look.copy(d).add(side);
-  look.y -= 0.06 * settle;
+  look.y += 0.12 * settle;
 }
 const frameShift = () => (camera.aspect < 0.8 ? 0 : 1);
 function placeCamera(snap, dt = 0) {
@@ -272,10 +276,15 @@ function frame(now) {
   sun.target.position.set(x, y, z);
 
   const h = Math.max(0, y - PARAMS.restHeight);
-  contact.position.set(x, 0.002, z);
+  contact.position.set(x, 0.007, z);
   contact.scale.setScalar(1 + h * 0.8);
   contact.material.opacity = Math.max(0, 0.85 - h * 0.55);
   updateDust(dt, x, z, h);
+  const gusting = gust && clock < gust.until + 0.5;
+  wind.set(0.05, 0.02);
+  if (gusting) wind.add(new THREE.Vector2(gust.force[0], gust.force[2]).multiplyScalar(0.03));
+  const wash = drone.thrust.reduce((a, b) => a + b, 0) / (4 * drone.hoverThrust());
+  grass.update(clock, drone.pos, Math.min(wash, 1.5), wind);
 
   if (grab.active) {
     const p = new THREE.Vector3(...drone.bodyToWorld(grab.local));
