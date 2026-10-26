@@ -1,28 +1,33 @@
-// Full-screen drone hero: alpine scene, takeoff sequence, then a live controller
-// that keeps the drone hovering while the visitor pushes it around.
+// Full-screen drone hero: real footage of a lawn below the Drakensberg, with a
+// 3D drone composited on top. It takes off from a pad, then a live controller
+// keeps it hovering while the visitor pushes it around.
 import * as THREE from 'three';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
-import { GroundedSkybox } from 'three/addons/objects/GroundedSkybox.js';
 import { Quadrotor, PARAMS, minJerk } from './physics.js';
 import { loadDrone } from './drone-model.js';
-import { createGround, createGrass, createPad } from './environment.js';
+import { createPad } from './pad.js';
+import { PLATE, poseCamera, fitCamera, startPlate, loadLightCurve, alignedX } from './plate.js';
 
 const PHYSICS_DT = 1 / 500;
-const HOVER = [0, 1.35, 0];
+// After the climb the drone glides towards the camera and hovers about 3 m from it.
+const HOVER = [alignedX(2.6), 1.25, 2.6];
 // Takeoff timeline in seconds.
-const T_SPINUP = 1.2, T_LIFTOFF = 3.0, CLIMB = 3.4, T_READY = T_LIFTOFF + CLIMB + 0.4;
-// Sun direction measured on the Alps Field HDRI (u = 0.60, v = 0.26 from the top).
-const SUN = (() => {
-  const el = (0.5 - 0.264) * Math.PI, az = (0.5995 - 0.5) * Math.PI * 2;
-  return new THREE.Vector3(Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az)).normalize();
-})();
+const T_SPINUP = 1.4, T_LIFTOFF = 3.2, CLIMB = 4.2, T_READY = T_LIFTOFF + CLIMB + 0.4;
+// The brightest part of the cloud cover is ahead and to the right of the camera.
+const SKY_KEY = new THREE.Vector3(1.1, 2.6, -2.2).normalize();
+const EXPOSURE = 1.0;
+// Digital push-in on the pad before takeoff (both layers scale together).
+const PUSH = 1.3;
 const GRAB_K = 90, GRAB_C = 8, GRAB_MAX = 30;
 // The pull acts between the centre of mass and the grabbed point: enough lever
 // to tilt the frame, but the drone still follows the hand instead of spinning.
 const GRAB_LEVER = 0.3;
-const BOUNDS = { r: 2.4, yMin: 0.5, yMax: 2.4 };
+// Keep the drone over the lawn and inside the frame.
+const BOUNDS = { x: [-2.2, 2.2], y: [0.5, 2.6], z: [-3.5, 2.2] };
 
 const canvas = document.getElementById('scene');
+const video = document.getElementById('plate');
+const stack = document.getElementById('stack');
 const ui = {
   loader: document.getElementById('loader'),
   progress: document.getElementById('loader-progress'),
@@ -37,32 +42,36 @@ const ui = {
 };
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(0x000000, 0);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = EXPOSURE;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// Overcast light: wide, soft shadows.
+renderer.shadowMap.type = THREE.VSMShadowMap;
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(32, 1, 0.02, 300);
+const camera = new THREE.PerspectiveCamera(PLATE.vfov, 16 / 9, 0.05, 200);
+poseCamera(camera);
 
-const sun = new THREE.DirectionalLight(0xfff0dc, 2.6);
-sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-Object.assign(sun.shadow.camera, { left: -0.8, right: 0.8, top: 0.8, bottom: -0.8, near: 0.5, far: 20 });
-sun.shadow.bias = -0.0003;
-sun.shadow.normalBias = 0.01;
-scene.add(sun, sun.target);
+const skyKey = new THREE.DirectionalLight(0xfff3e6, 1.1);
+skyKey.castShadow = true;
+skyKey.shadow.mapSize.set(1024, 1024);
+Object.assign(skyKey.shadow.camera, { left: -1.4, right: 1.4, top: 1.4, bottom: -1.4, near: 1, far: 20 });
+skyKey.shadow.radius = 14;
+skyKey.shadow.blurSamples = 24;
+skyKey.shadow.bias = -0.0006;
+scene.add(skyKey, skyKey.target);
 
-// Fewer grass clumps on phones and small screens.
-const lowPower = matchMedia('(pointer: coarse)').matches || Math.min(innerWidth, innerHeight) < 700;
-const grass = createGrass({ count: lowPower ? 50000 : 200000 });
-scene.add(grass.mesh, createPad());
-const wind = new THREE.Vector2();
+// Only shadows are drawn on the real lawn.
+const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.ShadowMaterial({ opacity: 0.42, color: 0x1c1408 }));
+shadowCatcher.rotation.x = -Math.PI / 2;
+shadowCatcher.receiveShadow = true;
+const pad = createPad();
+scene.add(shadowCatcher, pad);
 
-// Soft contact shadow and flattened grass under the drone (downwash).
 function radialTexture(stops) {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
@@ -72,21 +81,23 @@ function radialTexture(stops) {
   ctx.fillRect(0, 0, 128, 128);
   return new THREE.CanvasTexture(c);
 }
+// Ambient occlusion under the drone: under an overcast sky this is most of the shadow.
 const contact = new THREE.Mesh(
-  new THREE.PlaneGeometry(0.75, 0.75),
-  new THREE.MeshBasicMaterial({ map: radialTexture([[0, 'rgba(0,0,0,0.7)'], [0.5, 'rgba(0,0,0,0.25)'], [1, 'rgba(0,0,0,0)']]), transparent: true, depthWrite: false }),
+  new THREE.PlaneGeometry(0.8, 0.8),
+  new THREE.MeshBasicMaterial({ map: radialTexture([[0, 'rgba(20,14,6,0.75)'], [0.5, 'rgba(20,14,6,0.3)'], [1, 'rgba(20,14,6,0)']]), transparent: true, depthWrite: false }),
 );
 contact.rotation.x = -Math.PI / 2;
-contact.position.y = 0.007;
+contact.position.y = 0.008;
+contact.renderOrder = 1;
 scene.add(contact);
 
-// Dust and grass bits lifted by the downwash near the ground.
-const DUST = 160;
+// Dust lifted from the dry lawn by the downwash.
+const DUST = 180;
 const dustGeo = new THREE.BufferGeometry();
 dustGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(DUST * 3), 3));
 const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({
-  size: 0.018, map: radialTexture([[0, 'rgba(214,200,160,1)'], [1, 'rgba(214,200,160,0)']]),
-  transparent: true, depthWrite: false, opacity: 0, color: 0xd8cfb4,
+  size: 0.02, map: radialTexture([[0, 'rgba(196,180,140,1)'], [1, 'rgba(196,180,140,0)']]),
+  transparent: true, depthWrite: false, opacity: 0, color: 0xcbbd98,
 }));
 const dustState = Array.from({ length: DUST }, () => ({ a: Math.random() * Math.PI * 2, r: 0, y: 0, life: Math.random() }));
 scene.add(dust);
@@ -96,13 +107,14 @@ const grabLine = new THREE.Line(
   new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
   new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthTest: false }),
 );
-const grabDot = new THREE.Mesh(new THREE.SphereGeometry(0.012, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false }));
+const grabDot = new THREE.Mesh(new THREE.SphereGeometry(0.014, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false }));
 grabLine.renderOrder = grabDot.renderOrder = 10;
 grabLine.visible = grabDot.visible = false;
 scene.add(grabLine, grabDot);
 
 const drone = new Quadrotor();
 let model = null;
+let lightAt = () => 1;
 let clock = 0;            // seconds since the takeoff sequence started
 let ready = false;
 let accumulator = 0;
@@ -113,10 +125,7 @@ const grab = { active: false, local: null, target: new THREE.Vector3(), plane: n
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false);
-  camera.aspect = w / h;
-  // Keep the drone a similar size on portrait phones.
-  camera.fov = camera.aspect < 0.8 ? 48 : 32;
-  camera.updateProjectionMatrix();
+  video.style.objectPosition = fitCamera(camera, w, h);
 }
 addEventListener('resize', resize);
 resize();
@@ -125,26 +134,16 @@ const manager = new THREE.LoadingManager();
 manager.onProgress = (_url, loaded, total) => { ui.progress.style.transform = `scaleX(${loaded / total})`; };
 
 async function init() {
-  const [hdr, backplate, droneModel, ground] = await Promise.all([
-    new RGBELoader(manager).loadAsync('assets/env/alps_field_1k.hdr'),
-    new THREE.TextureLoader(manager).loadAsync('assets/env/alps-field-8k.jpg'),
+  const [hdr, droneModel, curve] = await Promise.all([
+    new RGBELoader(manager).loadAsync('assets/env/fouriesburg_mountain_cloudy_1k.hdr'),
     loadDrone(manager),
-    createGround(manager, renderer),
+    loadLightCurve(),
+    startPlate(video),
   ]);
   hdr.mapping = THREE.EquirectangularReflectionMapping;
   scene.environment = hdr;
-  scene.environmentIntensity = 1.15;
-
-  // The photo is only the distant backdrop: sky, mountains and the far meadow.
-  // Near the camera, where a projected photo would look stretched, the ground
-  // is real geometry with grass, fading into the photo further out.
-  backplate.mapping = THREE.EquirectangularReflectionMapping;
-  backplate.colorSpace = THREE.SRGBColorSpace;
-  backplate.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  const skybox = new GroundedSkybox(backplate, 1.6, 250, 128);
-  skybox.material.toneMapped = false;
-  skybox.position.y = 1.6 - 0.04;
-  scene.add(skybox, ground);
+  scene.environmentIntensity = 0.9;
+  lightAt = curve;
 
   model = droneModel;
   scene.add(model.root);
@@ -154,7 +153,7 @@ async function init() {
 }
 
 function restart() {
-  drone.reset([0, PARAMS.restHeight, 0], 0.55);
+  drone.reset([0, PARAMS.restHeight, 0], -0.35);
   clock = reducedMotion ? T_READY : 0;
   ready = false;
   gust = null;
@@ -166,7 +165,6 @@ function restart() {
     drone.onGround = false;
   }
   ui.hero.classList.remove('is-ready');
-  placeCamera(true);
 }
 
 // --- takeoff director ----------------------------------------------------------
@@ -178,13 +176,24 @@ function direct() {
     drone.spinup = minJerk((clock - T_SPINUP) / (T_LIFTOFF - T_SPINUP));
   } else if (!ready) {
     drone.setMode('auto');
-    const s = minJerk((clock - T_LIFTOFF) / CLIMB);
-    drone.target.pos = [0, PARAMS.restHeight + (HOVER[1] - PARAMS.restHeight) * s, 0];
+    // Climb first, then move in towards the camera.
+    const up = minJerk((clock - T_LIFTOFF) / (CLIMB * 0.6));
+    const across = minJerk((clock - T_LIFTOFF - CLIMB * 0.35) / (CLIMB * 0.65));
+    drone.target.pos = [HOVER[0] * across, PARAMS.restHeight + (HOVER[1] - PARAMS.restHeight) * up, HOVER[2] * across];
     if (clock >= T_READY) {
       ready = true;
       ui.hero.classList.add('is-ready');
     }
   }
+}
+
+// The push-in eases out while the drone climbs, ending on the full frame.
+function pushIn() {
+  if (reducedMotion) return;
+  const zoom = THREE.MathUtils.lerp(PUSH, 1, THREE.MathUtils.smoothstep(clock, T_LIFTOFF - 0.4, T_READY + 0.8));
+  const p = new THREE.Vector3(0, 0.25, 0).project(camera);
+  stack.style.transformOrigin = `${(p.x + 1) / 2 * 100}% ${(1 - p.y) / 2 * 100}%`;
+  stack.style.transform = zoom > 1.0005 ? `scale(${zoom.toFixed(4)})` : '';
 }
 
 function steerWithKeys(dt) {
@@ -202,11 +211,9 @@ function steerWithKeys(dt) {
   if (keys.has('KeyE') || keys.has('PageUp')) move.y += 1;
   if (keys.has('KeyQ') || keys.has('PageDown')) move.y -= 1;
   const t = drone.target.pos;
-  t[0] += move.x * 1.2 * dt;
-  t[1] = THREE.MathUtils.clamp(t[1] + move.y * 0.8 * dt, BOUNDS.yMin, BOUNDS.yMax);
-  t[2] += move.z * 1.2 * dt;
-  const r = Math.hypot(t[0], t[2]);
-  if (r > BOUNDS.r) { t[0] *= BOUNDS.r / r; t[2] *= BOUNDS.r / r; }
+  t[0] = THREE.MathUtils.clamp(t[0] + move.x * 1.2 * dt, ...BOUNDS.x);
+  t[1] = THREE.MathUtils.clamp(t[1] + move.y * 0.8 * dt, ...BOUNDS.y);
+  t[2] = THREE.MathUtils.clamp(t[2] + move.z * 1.2 * dt, ...BOUNDS.z);
 }
 
 function physics(dt) {
@@ -225,38 +232,6 @@ function physics(dt) {
   }
 }
 
-// --- camera -------------------------------------------------------------------
-const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
-function cameraGoal(out, look) {
-  const d = new THREE.Vector3(...drone.pos);
-  const intro = THREE.MathUtils.smoothstep(clock, T_LIFTOFF - 0.6, T_READY + 0.6);
-  // Ground-level close-up before takeoff, wide shot once hovering.
-  const close = new THREE.Vector3(0.66, 0.26, 0.86).applyAxisAngle(new THREE.Vector3(0, 1, 0), clock * 0.05);
-  const wide = new THREE.Vector3(0.84, 0.3, 1.22).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.sin(clock * 0.07) * 0.18);
-  const offset = close.lerp(wide, intro);
-  // The camera climbs with the drone, so it stays in frame during takeoff.
-  const anchor = new THREE.Vector3(d.x * 0.85, Math.min(d.y, HOVER[1] + 0.6) * 0.92 + 0.04, d.z * 0.85);
-  out.copy(anchor).add(offset);
-  // Once hovering, frame the drone right of centre, clear of the headline.
-  const settle = THREE.MathUtils.smoothstep(clock, T_READY - 1.2, T_READY + 1);
-  const side = new THREE.Vector3(offset.z, 0, -offset.x).normalize().multiplyScalar(-0.3 * settle * frameShift());
-  look.copy(d).add(side);
-  look.y += 0.12 * settle;
-}
-const frameShift = () => (camera.aspect < 0.8 ? 0 : 1);
-function placeCamera(snap, dt = 0) {
-  const goal = new THREE.Vector3(), look = new THREE.Vector3();
-  cameraGoal(goal, look);
-  const k = snap ? 1 : 1 - Math.exp(-dt * 2.2);
-  camPos.lerp(goal, k);
-  camLook.lerp(look, snap ? 1 : 1 - Math.exp(-dt * 5));
-  // A little hand-held movement.
-  const t = performance.now() / 1000;
-  const shake = reducedMotion ? 0 : 0.004;
-  camera.position.copy(camPos).add(new THREE.Vector3(Math.sin(t * 1.3) * shake, Math.sin(t * 1.7 + 1) * shake, Math.sin(t * 1.1 + 2) * shake));
-  camera.lookAt(camLook);
-}
-
 // --- frame --------------------------------------------------------------------
 let last = performance.now(), hudTimer = 0;
 function frame(now) {
@@ -272,19 +247,16 @@ function frame(now) {
   model.root.quaternion.set(qx, qy, qz, w);
   model.update(drone, dt, clock);
 
-  sun.position.set(x, y, z).addScaledVector(SUN, 8);
-  sun.target.position.set(x, y, z);
+  skyKey.position.set(x, y, z).addScaledVector(SKY_KEY, 8);
+  skyKey.target.position.set(x, y, z);
+  // Follow the cloud shadows passing over the lawn in the footage.
+  renderer.toneMappingExposure = EXPOSURE * lightAt(video.currentTime);
 
   const h = Math.max(0, y - PARAMS.restHeight);
-  contact.position.set(x, 0.007, z);
-  contact.scale.setScalar(1 + h * 0.8);
-  contact.material.opacity = Math.max(0, 0.85 - h * 0.55);
+  contact.position.set(x, 0.008, z);
+  contact.scale.setScalar(1 + h * 0.9);
+  contact.material.opacity = Math.max(0, 0.9 - h * 0.6);
   updateDust(dt, x, z, h);
-  const gusting = gust && clock < gust.until + 0.5;
-  wind.set(0.05, 0.02);
-  if (gusting) wind.add(new THREE.Vector2(gust.force[0], gust.force[2]).multiplyScalar(0.03));
-  const wash = drone.thrust.reduce((a, b) => a + b, 0) / (4 * drone.hoverThrust());
-  grass.update(clock, drone.pos, Math.min(wash, 1.5), wind);
 
   if (grab.active) {
     const p = new THREE.Vector3(...drone.bodyToWorld(grab.local));
@@ -294,7 +266,7 @@ function frame(now) {
     grabDot.position.copy(grab.target);
   }
 
-  placeCamera(false, dt);
+  pushIn();
   renderer.render(scene, camera);
 
   hudTimer -= dt;
@@ -307,13 +279,13 @@ function updateDust(dt, x, z, h) {
   const pos = dustGeo.attributes.position;
   dustState.forEach((p, i) => {
     p.life += dt * (0.6 + Math.random() * 0.4);
-    if (p.life > 1) { p.life = 0; p.a = Math.random() * Math.PI * 2; p.r = 0.12 + Math.random() * 0.15; p.y = 0; }
+    if (p.life > 1) { p.life = 0; p.a = Math.random() * Math.PI * 2; p.r = 0.3 + Math.random() * 0.12; p.y = 0; }
     p.r += dt * (0.6 + strength * 1.2);
     p.y = Math.sin(p.life * Math.PI) * 0.06 * (0.5 + strength);
     pos.setXYZ(i, x + Math.cos(p.a) * p.r, p.y + 0.01, z + Math.sin(p.a) * p.r);
   });
   pos.needsUpdate = true;
-  dust.material.opacity = 0.55 * strength;
+  dust.material.opacity = 0.5 * strength;
 }
 
 function updateHud(h) {
@@ -333,6 +305,7 @@ function updateHud(h) {
 // --- interaction ----------------------------------------------------------------
 const raycaster = new THREE.Raycaster();
 function pointerRay(e) {
+  // The rect includes the push-in scale, so pointer and picture stay aligned.
   const r = canvas.getBoundingClientRect();
   raycaster.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
   return raycaster.ray;

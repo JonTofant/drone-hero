@@ -1,8 +1,9 @@
 # Dron v ravnotežju
 
-Celozaslonski 3D-prikaz za promocijo študija Avtomatike in robotike na UM FERI.
-Dron vzleti s travnika, nato lebdi. Obiskovalec ga lahko povleče ali nanj
-pošlje sunek vetra, regulator pa ga vrne v lebdenje.
+Celozaslonski prikaz za promocijo študija Avtomatike in robotike na UM FERI.
+Ozadje je pravi video posnetek travnika pod gorovjem Drakensberg, dron pa je 3D
+in vstavljen v posnetek. Vzleti z vzletne podloge in obleti do kamere, nato lebdi.
+Obiskovalec ga lahko povleče ali nanj pošlje sunek vetra, regulator pa ga vrne v lebdenje.
 
 Stran je statična (HTML, CSS, JavaScript). Three.js se naloži s CDN-ja,
 namestitev in gradnja nista potrebni.
@@ -30,19 +31,27 @@ Nato odpri <http://localhost:8000>.
 - `css/style.css`: postavitev in odzivni slogi.
 - `js/physics.js`: model kvadrokopterja in regulator, brez odvisnosti od Three.js.
 - `js/drone-model.js`: mreža Skydio X2, propelerji z zameglitvijo gibanja in navigacijske luči.
-- `js/environment.js`: 3D-tla, vzletna podloga in trava z vetrom ter tokom zraka pod dronom.
-- `js/main.js`: prizor, osvetlitev iz HDRI, potek vzleta, kamera in interakcija.
+- `js/plate.js`: video ozadje, kamera, usklajena s posnetkom, in enako obrezovanje obeh plasti.
+- `js/pad.js`: vzletna podloga.
+- `js/main.js`: osvetlitev, senca, potek vzleta in interakcija.
 - `tests/physics.test.mjs`: testi fizike in regulatorja.
 - `assets/`: model drona in okolje.
 
-## Okolje
+## Posnetek in vstavljanje drona
 
-- **Bližnja tla:** do približno 30 m so tla prava geometrija, nato se zlijejo s fotografijo
-  travnika. Projicirana fotografija bi blizu kamere delovala raztegnjeno.
-- **Trava:** v krogu 14 m raste do 200.000 šopov trave (na telefonih 50.000).
-  - Senčilnik upogiba bilke v vetru.
-  - Med vzletom in nizkim letom tok zraka izpod drona razpiha travo navzven.
-- **Ozadje:** nebo, gore in oddaljeni travnik so iz fotografije Alps Field.
+- **Posnetek:** Pexels 3115566 (Magda Ehlers). Kamera med 4. in 20. sekundo miruje;
+  to je preverjeno s sledenjem točkam na grebenih in grmovju. Zanka traja 14 s
+  in ima 2-sekundni prelivni prehod. Ločljivosti sta 1080p in 720p (za majhne zaslone).
+- **Kamera:** usklajena s posnetkom (`PLATE` v `js/plate.js`):
+  - višina okoli 1 m in navpični zorni kot 45°;
+  - višina oči pri 57 % višine slike in rahel nagib.
+  Video in 3D-plast se pri vsakem razmerju zaslona obrežeta enako (`setViewOffset`).
+- **Svetloba:** oblačno nebo (HDRI Fouriesburg Mountain Cloudy) in mehka luč s
+  sprednje desne strani, kjer je oblak najsvetlejši.
+  - Senca je mehka (VSM), pod dronom je še okluzija.
+  - Osvetljenost drona sledi svetlosti trate v posnetku (`plate-light.json`).
+- **Postavitev:** dron po vzletu obleti na točko, ki je na vseh zaslonih v isti
+  navpičnici kot podloga, zato je viden tudi na ozkih telefonih.
 
 ## Fizika in vodenje
 
@@ -65,7 +74,8 @@ npm test
 - Model drona: **Skydio X2**, Skydio, [Apache 2.0](assets/models/LICENSE-skydio-x2.txt),
   iz [google-deepmind/mujoco_menagerie](https://github.com/google-deepmind/mujoco_menagerie/tree/main/skydio_x2).
   Spremenjeno: odstranjeni so ploski diski propelerjev; propelerji so izrisani v kodi.
-- Okolje: **Alps Field**, Andreas Mischok, [Poly Haven](https://polyhaven.com/a/alps_field), CC0.
-  Ozadje je 8K tonsko preslikan JPG, osvetlitev pa 1K HDR.
-- Tla: **Sparse Grass**, Amal Kumar, [Poly Haven](https://polyhaven.com/a/sparse_grass), CC0.
+- Posnetek: Magda Ehlers, [Pexels 3115566](https://www.pexels.com/video/scenic-view-of-the-mountain-and-clouds-from-a-valley-3115566/),
+  licenca Pexels. Skrajšan, zapet v zanko in ponovno kodiran.
+- Osvetlitev: **Fouriesburg Mountain Cloudy**, Dimitrios Savva in Jarod Guest,
+  [Poly Haven](https://polyhaven.com/a/fouriesburg_mountain_cloudy), CC0.
 - [Three.js](https://threejs.org/) 0.170, MIT, naložen s CDN-ja jsDelivr.

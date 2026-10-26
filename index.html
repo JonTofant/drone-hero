@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Dron v ravnotežju – Avtomatika in robotika</title>
-<meta name="description" content="Celozaslonski 3D-prikaz drona, ki vzleti in s povratno zanko sam ohranja ravnotežje.">
+<meta name="description" content="Celozaslonski prikaz drona, ki vzleti in s povratno zanko sam ohranja ravnotežje.">
 <link rel="stylesheet" href="css/style.css">
 <script type="importmap">
 {
@@ -18,7 +18,10 @@
 </head>
 <body>
 <main class="stage">
-  <canvas id="scene" aria-label="Dron vzleti in lebdi nad travnikom. Povleci ga, da ga premakneš; regulator ga vrne v lebdenje."></canvas>
+  <div id="stack" class="stack">
+    <video id="plate" class="plate" muted loop playsinline autoplay preload="auto" poster="assets/plate/plate-poster.jpg" aria-hidden="true"></video>
+    <canvas id="scene" aria-label="Dron vzleti z vzletne podloge na travniku pod gorami in lebdi. Povleci ga, da ga premakneš; regulator ga vrne v lebdenje."></canvas>
+  </div>
   <div class="vignette" aria-hidden="true"></div>
 
   <section id="hero" class="hero">
@@ -47,7 +50,7 @@
     <button type="button" id="btn-fullscreen" aria-label="Celozaslonski način">⛶</button>
   </nav>
 
-  <p class="credits">Model: Skydio X2 (Skydio, Apache 2.0) · Okolje: Alps Field, Andreas Mischok · Tla: Sparse Grass, Amal Kumar (Poly Haven, CC0)</p>
+  <p class="credits">Posnetek: Magda Ehlers (Pexels) · Model: Skydio X2 (Skydio, Apache 2.0) · Osvetlitev: Fouriesburg Mountain Cloudy (Poly Haven, CC0)</p>
 
   <div id="loader" class="loader" role="status">
     <p>Pripravljam vzletišče …</p>

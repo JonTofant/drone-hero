@@ -12,13 +12,16 @@ html, body { margin: 0; height: 100%; background: #0c1a22; color: var(--ink); fo
 h1, p, ul, dl, dd { margin: 0; padding: 0; }
 ul { list-style: none; }
 
-.stage { position: fixed; inset: 0; }
+.stage { position: fixed; inset: 0; overflow: hidden; }
+/* Footage and 3D canvas share one box, so the push-in scales them together. */
+.stack { position: absolute; inset: 0; will-change: transform; }
+.plate { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 #scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
 #scene.is-over-drone { cursor: grab; }
 #scene.is-grabbing { cursor: grabbing; }
 .vignette { position: absolute; inset: 0; pointer-events: none; background:
-  radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(4, 12, 18, 0.45) 100%),
-  linear-gradient(to top, rgba(4, 14, 20, 0.55), transparent 38%); }
+  radial-gradient(120% 90% at 50% 45%, transparent 60%, rgba(4, 12, 18, 0.35) 100%),
+  linear-gradient(to top, rgba(4, 14, 20, 0.5), transparent 34%); }
 
 .hero { position: absolute; left: var(--gutter); bottom: calc(var(--gutter) + 8px); max-width: 520px; pointer-events: none;
   opacity: 0; transform: translateY(14px); transition: opacity 1.2s ease, transform 1.2s ease; }

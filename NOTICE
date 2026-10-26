@@ -3,6 +3,7 @@ assets/models/x2-texture.png), provided by Skydio under the Apache License 2.0
 via google-deepmind/mujoco_menagerie. The mesh was modified: propeller disc
 faces were removed. See assets/models/LICENSE-skydio-x2.txt.
 
-The environment (assets/env/) is "Alps Field" by Andreas Mischok, and the
-ground texture (assets/ground/) is "Sparse Grass" by Amal Kumar, both from
-Poly Haven, released under CC0.
+The background footage (assets/plate/) is Pexels video 3115566 by Magda Ehlers,
+used under the Pexels License; it was trimmed, looped and re-encoded.
+The lighting environment (assets/env/) is "Fouriesburg Mountain Cloudy" by
+Dimitrios Savva and Jarod Guest from Poly Haven, released under CC0.
