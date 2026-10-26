@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dron v ravnotežju – Avtomatika in robotika</title>
+<meta name="description" content="Celozaslonski 3D-prikaz drona, ki vzleti in s povratno zanko sam ohranja ravnotežje.">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/main.js"></script>
+</head>
+<body>
+<main class="stage">
+  <canvas id="scene" aria-label="Dron vzleti in lebdi nad travnikom. Povleci ga, da ga premakneš; regulator ga vrne v lebdenje."></canvas>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <section id="hero" class="hero">
+    <p class="eyebrow">UM FERI · Avtomatika in robotika</p>
+    <h1>Zaznaj. Odloči.<br><em>Ukrepaj.</em></h1>
+    <p class="lead">Dron petstokrat na sekundo izmeri svoj nagib in popravi potisk motorjev. <strong>Primi ga in ga potisni.</strong></p>
+    <ul class="hints">
+      <li><kbd>Povleci</kbd> dron</li>
+      <li><kbd>Klikni</kbd> ob njem za sunek vetra</li>
+      <li class="hint-keys"><kbd>WASD</kbd> premik · <kbd>Q</kbd><kbd>E</kbd> višina</li>
+    </ul>
+  </section>
+
+  <aside class="telemetry" aria-label="Telemetrija">
+    <p class="phase"><i aria-hidden="true"></i><span id="phase">Nalagam</span></p>
+    <dl>
+      <div><dt>Višina</dt><dd id="t-alt">0,00 m</dd></div>
+      <div><dt>Nagib</dt><dd id="t-tilt">0,0°</dd></div>
+      <div class="motors"><dt>Motorji</dt><dd><span class="motor-bar"><i></i></span><span class="motor-bar"><i></i></span><span class="motor-bar"><i></i></span><span class="motor-bar"><i></i></span></dd></div>
+    </dl>
+  </aside>
+
+  <nav class="controls" aria-label="Upravljanje">
+    <button type="button" id="btn-gust">Sunek vetra</button>
+    <button type="button" id="btn-replay">Ponovi vzlet</button>
+    <button type="button" id="btn-fullscreen" aria-label="Celozaslonski način">⛶</button>
+  </nav>
+
+  <p class="credits">Model: Skydio X2 (Skydio, Apache 2.0) · Okolje: Alps Field, Andreas Mischok (Poly Haven, CC0)</p>
+
+  <div id="loader" class="loader" role="status">
+    <p>Pripravljam vzletišče …</p>
+    <span class="loader-track"><span id="loader-progress"></span></span>
+  </div>
+</main>
+</body>
+</html>

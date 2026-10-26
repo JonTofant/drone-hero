@@ -1,0 +1,7 @@
+This project includes the Skydio X2 drone model (assets/models/x2-body.obj and
+assets/models/x2-texture.png), provided by Skydio under the Apache License 2.0
+via google-deepmind/mujoco_menagerie. The mesh was modified: propeller disc
+faces were removed. See assets/models/LICENSE-skydio-x2.txt.
+
+The environment (assets/env/) is "Alps Field" by Andreas Mischok from
+Poly Haven, released under CC0.
