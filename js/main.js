@@ -42,15 +42,28 @@ const ui = {
 };
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// ?debug shows a diagnostics panel. The other switches turn off one costly
+// feature at a time, to find what a device that fails to draw the scene cannot do.
+const params = new URLSearchParams(location.search);
+const opt = {
+  render: params.get('gl') !== '0',
+  antialias: params.get('aa') !== '0',
+  maxPixelRatio: Number(params.get('pr')) || 2,
+  shadows: params.get('shadow') ?? 'vsm',   // vsm | pcf | off
+  environment: params.get('env') !== '0',
+  plate: params.get('plate'),               // 720 | 1080, otherwise by screen size
+};
+const debug = params.has('debug') ? await import('./debug.js') : null;
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: opt.antialias, alpha: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, opt.maxPixelRatio));
 renderer.setClearColor(0x000000, 0);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = EXPOSURE;
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = opt.shadows !== 'off';
 // Overcast light: wide, soft shadows.
-renderer.shadowMap.type = THREE.VSMShadowMap;
+renderer.shadowMap.type = opt.shadows === 'pcf' ? THREE.PCFSoftShadowMap : THREE.VSMShadowMap;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(PLATE.vfov, 16 / 9, 0.05, 200);
@@ -138,10 +151,10 @@ async function init() {
     new RGBELoader(manager).loadAsync('assets/env/fouriesburg_mountain_cloudy_1k.hdr'),
     loadDrone(manager),
     loadLightCurve(),
-    startPlate(video),
+    startPlate(video, opt.plate),
   ]);
   hdr.mapping = THREE.EquirectangularReflectionMapping;
-  scene.environment = hdr;
+  if (opt.environment) scene.environment = hdr;
   scene.environmentIntensity = 0.9;
   lightAt = curve;
 
@@ -267,7 +280,7 @@ function frame(now) {
   }
 
   pushIn();
-  renderer.render(scene, camera);
+  if (opt.render) renderer.render(scene, camera);
 
   hudTimer -= dt;
   if (hudTimer <= 0) { hudTimer = 0.08; updateHud(h); }
@@ -378,6 +391,7 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
 
+debug?.attach({ renderer, camera, video, manager, drone: () => model?.root });
 init().catch((err) => {
   console.error(err);
   ui.loader.querySelector('p').textContent = 'Prizora ni bilo mogoče naložiti. Preveri, ali stran teče prek strežnika (npr. python3 -m http.server).';

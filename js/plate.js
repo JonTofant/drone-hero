@@ -48,10 +48,10 @@ export function fitCamera(camera, viewW, viewH) {
   return `${FOCUS.x * 100}% ${FOCUS.y * 100}%`;
 }
 
-// Picks the 720p loop for small screens, starts playback and resolves once
-// the first frame can be shown.
-export function startPlate(video) {
-  const big = Math.max(innerWidth, innerHeight) * Math.min(devicePixelRatio, 2) > 1400;
+// Picks the 720p loop for small screens (or the size asked for), starts playback
+// and resolves once the first frame can be shown.
+export function startPlate(video, size) {
+  const big = size ? size === '1080' : Math.max(innerWidth, innerHeight) * Math.min(devicePixelRatio, 2) > 1400;
   video.src = big ? 'assets/plate/plate-1080.mp4' : 'assets/plate/plate-720.mp4';
   video.muted = true;
   video.loop = true;
